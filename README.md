@@ -1,4 +1,12 @@
 
+# Thompsons Creek Streamflow Simulation
+
+<!-- badges: start -->
+
+[![license](https://img.shields.io/badge/license-CCBY-lightgrey.svg)](https://choosealicense.com/)
+
+<!-- badges: end -->
+
 This repository contains the data, code, and figures used in:
 
 Schramm M, Gitter A, Rambo J, DeVilleneuve S, Rhodes E, Gregory L.

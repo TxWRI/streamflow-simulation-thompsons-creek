@@ -6,11 +6,19 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Thompsons Creek Streamflow Simulation
+
+<!-- badges: start -->
+
+[![license](https://img.shields.io/badge/license-CCBY-lightgrey.svg)](https://choosealicense.com/)
+
+<!-- badges: end -->
+
+
+
 This repository contains the data, code, and figures used in:
 
 Schramm M, Gitter A, Rambo J, DeVilleneuve S, Rhodes E, Gregory L. Forthcoming. Comparison of Daily Streamflow Estimation Methods in the Thompsons Creek Watershed. College Station, TX: Texas Water Resources Institute.
-
-
 
 
 The TSD-Appendix folder contains code used for the Appendix and streamflow simulations in:
