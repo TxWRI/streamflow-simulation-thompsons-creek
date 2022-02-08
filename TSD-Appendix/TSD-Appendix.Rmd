@@ -1,0 +1,898 @@
+---
+output: 
+  officedown::rdocx_document:
+    reference_docx: format.docx
+    tables:
+      topcaption: true
+      caption:
+        style: Table Caption
+        pre: 'Table '
+        sep: '. '
+        tnd: 0
+        tns: ' '
+        fp_text: !expr officer::fp_text_lite(bold = FALSE)
+    plots:
+      style: Normal
+      align: center
+      caption:
+        style: Image Caption
+        pre: 'Figure '
+        sep: '. '
+        tnd: 0
+        tns: ' '
+        fp_text: !expr officer::fp_text_lite(bold = FALSE)
+bibliography: mybibfile.bib
+csl: council-of-science-editors-author-date.csl
+---
+
+```{r setup, include=FALSE}
+## load libraries
+library(officer)
+library(officedown)
+library(flextable)
+library(ragg)
+## Load the required packages
+library(tidyverse)
+library(nasapower)
+library(sf)
+library(dataRetrieval)
+library(mgcv)
+library(gratia)
+library(Evapotranspiration)
+library(elevatr)
+library(hydromad)
+library(twriTemplates)
+
+## this sets our default code chunk options
+knitr::opts_chunk$set(dev = "ragg_png",
+                      echo = FALSE,
+                      fig.cap = TRUE,
+                      fig.width = 6,
+                      dpi = 300,
+                      message = FALSE,
+                      warning = FALSE)
+
+```
+
+
+# Appendix A {-}
+
+
+
+## Background
+
+Hydrologic data in the form of daily streamflow records were unavailable in the Thompsons Creek watershed. In many cases, daily streamflow data can be reconstructed using the relatively simple Drainage Area Ratio (DAR) method [@asquith_statewide_2006]. The DAR method simply transfers daily flow records from a nearby gaged watershed to the ungaged location and multiplies it by the ratio of the drainage areas. This method performs best on watersheds relatively close in size, distance, and watershed characteristics. Similarly, if some daily streamflow records are available in the ungaged watershed, a log-linear regression can be used to establish correlations between one or more gaged watersheds and the ungaged watershed [@state_of_ohio_environmental_protection_agency_tmdls_2009]. Statistical relationships between local climate drivers (precipitation, evapotranpiration, temperature, etc.) can be developed using semi-parametric regression methods such as Generalized Additive Models and used to predict long-term daily streamflow records [@schramm_comparision_2021]. Relatively simple lumped conceptual rainfall-runoff models can also be considered statistical models that estimate streamflow at a catchment outlet as a function of precipitation and evapotranspiration inputs spatially aggregated for the entire watershed. Multiple parameters representing relationships between processes are estimated by the user (or algorithm) to minimize or maximize some objective function between the observed streamflow and rainfall-runoff model output. Examples of these approaches include GR4J, Identification of Unit Hydrographs and Component Flows from Rainfall, Evapotranspiration, and Streamflow Data (IHACRES), and Sacramento rainfall-runoff model [@perrin_improvement_2003; @croke_catchment_2004; @burnash_nws_1995]. More complex fully distributed mechanistic models are also available but not evaluated for this watershed due to higher data requirements and the small size of the watershed.
+
+@schramm_comparision_2021 collected daily streamflow records at three sites in the Thompsons Creek watershed to evaluate how well the Drainage Area Ratio, log-linear regression, and generalized additive models performed at predicting daily streamflows in Thompsons Creek. Daily streamflow records were developed for SWQM stations 16396, 16397, and 16882 from March 3, 2020 through March 31, 2021. Daily streamflow records were developed using periodic high-frequency discharge measurements and collecting 15-minute stream height data. Rating curves were developed using the discharge and stream height measurements. The rating curves were used to predict streamflows between discharge measurements. Results indicated the (1) DAR performed extremely poorly at each SWQM station; (2) log-linear regression provided improved but biased streamflow estimates at SWQM-16396 and SWQM-16397; (3) log-linear regression failed to replicate the high occurrence of zero-flow values at SWQM-16882; and (4) GAMs predicted reasonably at all stations but had extremely high out-of sample predictive variance indicating issues with extrapolating data (indicating potential for predicting unrealistic streamflows with data not used to fit the regression). @schramm_comparision_2021 suggested also evaluating simple rainfall-runoff models that might limit the predictive variance with out-of-sample data. 
+
+The GR4J daily rainfall-runoff model was chosen to compare to GAM predicted streamflows. GR4J is a simple four parameter lumped conceptual rainfall-runoff model [@perrin_improvement_2003]. GR4J estimates effective rainfall, actual evaporation, and the amount of precipitation that reached flow routing. A 2-component unit hydrograph converts the input into streamflow response.  
+
+## Data
+
+Daily streamflow data at SWQM stations 16396, 16397, and 16882 were developed using rating curves developed using instream discharge measurements and stream height data described in @schramm_comparision_2021 (Figures \@ref(fig:ratingcurve16396), \@ref(fig:ratingcurve16397), \@ref(fig:ratingcurve16882)) Streamflow records were developed for the period March 3, 2020 through March 31, 2021 and adjusted to account for permitted average monthly upstream discharges using data obtained from EPA's Environmental Compliance and History Online database.
+
+```{r}
+#| ratingcurve16396,
+#| fig.width = 6.5,
+#| fig.height = 8,
+#| fig.cap = "Streamflow rating curve for SWQM-16396."
+#|
+knitr::include_graphics(here::here("Figures/03-ratingcurve-16396.png"))
+```
+
+```{r}
+#| ratingcurve16397,
+#| fig.width = 6.5,
+#| fig.height = 5,
+#| fig.cap = "Streamflow rating curve for SWQM-16397."
+#|
+knitr::include_graphics(here::here("Figures/04-ratingcurve-16397.png"))
+```
+
+```{r}
+#| ratingcurve16882,
+#| fig.width = 6.5,
+#| fig.height = 7,
+#| fig.cap = "Streamflow rating curve for SWQM-16882."
+#|
+knitr::include_graphics(here::here("Figures/04-ratingcurve-16882.png"))
+```
+
+```{r}
+#| streamflow, include = FALSE
+
+wwtf <- read_csv(here::here("Processed-Data/EPA_WWTF/mean_daily_discharges.csv"),
+                 col_types = cols(
+                   npdes_id = col_character(),
+                   date = col_date(format = ""),
+                   mgd = col_double(),
+                   cfs = col_double()))
+
+streamflow_df <- read_csv(here::here("Processed-Data/model_df.csv"),
+                          col_types = cols(
+                            Site = col_character(),
+                            date = col_date(format = ""),
+                            mean_daily = col_double()
+                            ))
+```
+
+
+
+Daily precipitation data was obtained from the  National Oceanic and Atmospheric Administration (NOAA) Global Historical Climatological Network (GHCN) station at Easterwood Airport (GHCND:USW00003904). The Easterwood airport is between one and 7.6 miles (straight-line distance) from each SWQM station and 3.2 miles from the closest watershed boundary.The GR4J model also requires daily evapotranspiration data that is not available using climatalogical variables collected at the Easterwood Airport station. Daily gridded temperature, solar radiation, and relative humidity data was obtained from the National Aeronautics and Space Administration (NASA) Langley Research Center (LaRC) Prediction of Worldwide Energy Resource (POWER) Project using the nasapower R package [@sparksa_2018; @sparksa_2018]. Daily evapotranspiration was calculated from gridded daily data using the Penmen-Monteith formulation [@hess-17-1331-2013].
+
+
+
+```{r climatevars}
+#| climatevars, include = FALSE
+
+## download climate variables
+
+## read in watershed
+thompsons_16396 <- sf::st_read(here::here("Raw-Data/Spatial/thompsons.shp"))
+## transform to wgs84
+thompsons_16396 <- st_transform(thompsons_16396, 4326)
+## calculate center
+thompsons_16396 <- st_centroid(thompsons_16396)
+coords <- st_coordinates(thompsons_16396)
+
+## get the daily parameters
+thompsons_climate <- get_power(
+  community = "ag",
+  pars = c("T2M_MAX", "T2M_MIN", "EVPTRNS", "GWETROOT", "PRECTOTCORR", "T2MDEW", "WS2M"),
+  temporal_api = "daily",
+  lonlat = coords,
+  date = c("2001-01-01", "2021-12-31")
+)
+## take a break of the call breaks
+Sys.sleep(60)
+## download hourly relative humidity so we can convert to daily min and daily max
+thompsons_rh <- get_power(
+  community = "ag",
+  pars = c("RH2M"),
+  temporal_api = "hourly",
+  lonlat = coords,
+  date = c("2001-01-01", "2021-12-31")
+)
+
+## convert to daily min and max RH
+thompsons_rh |> 
+  group_by(YEAR, MO, DY) |> 
+  summarise(RH_MAX = max(RH2M),
+            RH_MIN = min(RH2M),
+            .groups = "drop") |> 
+  mutate(YYYYMMDD = as.Date(paste0(YEAR, "-", MO, "-", DY))) |> 
+  select(YYYYMMDD, RH_MAX, RH_MIN) -> thompsons_rh
+
+## join RH to the rest of the daily climate variables.
+thompsons_climate |> left_join(thompsons_rh, by = "YYYYMMDD") -> thompsons_climate
+## get the elevation of the center of the watershed
+elevation <- elevatr::get_elev_point(as.data.frame(coords), prj = "EPSG:4326")
+
+## convert the climate data to something that the Evapotranspiration
+## package accepts
+thompsons_climate |> 
+  dplyr::rename(Tmax = T2M_MAX,
+                Tmin = T2M_MIN,
+                RHmax = RH_MAX,
+                RHmin = RH_MIN,
+                Rs = EVPTRNS,
+                u2 = WS2M,
+                Year = YEAR,
+                Month = MM,
+                Day = DD) -> ETInput
+
+## convert inputs to zoo format
+et_data <- ReadInputs(
+  varnames = c("Tmax", "Tmin", "RHmax", "RHmin", "Rs", "u2"),
+  climatedata = ETInput,
+  timestep = "daily",
+  stopmissing = c(10,10,3),
+  interp_missing_days = FALSE,
+  interp_missing_entries = FALSE,
+  interp_abnormal = FALSE,
+  missing_method = NULL,
+  abnormal_method = NULL
+)
+
+## I'm not sure if this is required, but stripping the time zones here.
+et_data$Date.daily <- as.Date(et_data$Date.daily)
+
+## grabbing some of the default constants used by Penman Monteith
+data("defaultconstants")
+constants <- defaultconstants
+## adding constants specific for our location
+constants$Elev <- elevation$elevation
+constants$lat_rad <- coords[[2]] * (pi/180)
+constants$lat <- coords[[2]]
+constants$z <- 2
+
+## apply Penman-Monteith
+et <- Evapotranspiration::ET.PenmanMonteith(
+  data = et_data,
+  constants = constants,
+  ts = "daily",
+  solar = "data",
+  wind = "yes",
+  crop = "short")
+
+## add the calculated daily ET values to the climate variable dataframe
+thompsons_climate$ET <- as.numeric(et$ET.Daily)
+
+
+## get local precip data
+library(rnoaa)
+library(rnoaahelpers)
+
+start_date <- as.Date("2001-01-01")
+end_date <- as.Date("2021-12-31")
+station_id <- "GHCND:USW00003904" ## COLLEGE STATION EASTERWOOD FIELD, TX US
+data_type_id <- "PRCP"
+token <- Sys.getenv("noaakey")
+
+local_precip <- download_ncdc(start_date = start_date,
+                              end_date = end_date,
+                              station_id = station_id,
+                              data_type_id = data_type_id,
+                              token = token,
+                              progress = TRUE)
+local_precip |> 
+  mutate(value = value/10) |> 
+  mutate(date = as.Date(date)) |> 
+  select(date, PRCP = value) -> local_precip
+
+thompsons_climate |> 
+  left_join(local_precip, by = c("YYYYMMDD" = "date")) -> thompsons_climate
+
+```
+
+
+```{r}
+#| streamflow_df, include = FALSE
+
+## create dataframe for each site
+
+streamflow_df |> 
+  filter(Site == "SWQM-16396") |> 
+  bind_rows(tibble(Site = c(rep("SWQM-16396",5)),
+                   date = seq.Date(as.Date("2020-02-27"), as.Date("2020-03-02"), by = "day"),
+                   mean_daily = NA)) |> 
+  arrange(date) |> 
+  full_join(thompsons_climate, by = c("date" = "YYYYMMDD")) |> 
+  left_join(wwtf %>% pivot_wider(id_cols = date, names_from = npdes_id, values_from = cfs),
+            by = c("date" = "date")) |> 
+  ## remove WWTF influence from discharge record
+  mutate(adjusted_flow = case_when(
+    Site == "SWQM-16396" ~ mean_daily - TX0025071 - TX0113603)) |> 
+  mutate(adjusted_flow = case_when(
+    adjusted_flow < 0 ~ 0,
+    adjusted_flow >= 0 ~ adjusted_flow)) |> 
+  mutate(month = lubridate::month(date))-> streamflow_16396
+
+streamflow_df |> 
+  filter(Site == "SWQM-16397") |> 
+  bind_rows(tibble(Site = c(rep("SWQM-16397",5)),
+                   date = seq.Date(as.Date("2020-02-27"), as.Date("2020-03-02"), by = "day"),
+                   mean_daily = NA)) |> 
+  arrange(date) |> 
+  full_join(thompsons_climate, by = c("date" = "YYYYMMDD")) |> 
+  left_join(wwtf %>% pivot_wider(id_cols = date, names_from = npdes_id, values_from = cfs),
+            by = c("date" = "date")) |> 
+  ## remove WWTF influence from discharge record
+  mutate(adjusted_flow = case_when(
+    Site == "SWQM-16397" ~ mean_daily)) |> 
+  mutate(adjusted_flow = case_when(
+    adjusted_flow < 0 ~ 0,
+    adjusted_flow >= 0 ~ adjusted_flow)) |> 
+  mutate(month = lubridate::month(date))-> streamflow_16397
+
+streamflow_df |> 
+  filter(Site == "SWQM-16882") |> 
+  bind_rows(tibble(Site = c(rep("SWQM-16882",5)),
+                   date = seq.Date(as.Date("2020-02-27"), as.Date("2020-03-02"), by = "day"),
+                   mean_daily = NA)) |> 
+  arrange(date) |> 
+  full_join(thompsons_climate, by = c("date" = "YYYYMMDD")) |> 
+  left_join(wwtf %>% pivot_wider(id_cols = date, names_from = npdes_id, values_from = cfs),
+            by = c("date" = "date")) |> 
+  ## remove WWTF influence from discharge record
+  mutate(adjusted_flow = case_when(
+    Site == "SWQM-16882" ~ mean_daily - TX0025071)) |> 
+  mutate(adjusted_flow = case_when(
+    adjusted_flow < 0 ~ 0,
+    adjusted_flow >= 0 ~ adjusted_flow)) |> 
+  mutate(month = lubridate::month(date))-> streamflow_16882
+```
+
+## Method
+
+### GR4J Rainfall-Runoff
+
+GR4J consists of four parameters that are optimized during the calibration process:
+
+  - X1: the production store maximal capacity,
+  - X2: the catchment water exchange coefficient,
+  - X3: the one-day maximal capacity of the routing reservoir,
+  - X4: the HU1 unit hydrograph time base.
+  
+Two inputs are daily rainfall and daily evapotranspiration. The math is not discusssed here but detailed in @perrin_improvement_2003. A generalized description of the approach is that net rainfall is estimated as precipitation minus evapotranspiration and divided into storage and surface runoff. The storage component is further moved to evapotranspiration or percolation. Total runoff is estimated as the sum of percolation and surface runoff from which 90 percent is routed through a quick flow unit hydrograph and routing store and 10 percent through a long flow unit hydrograph.
+
+Ideally, multiple years of data would be used to calibrate the parameters with a year to warm up the model. Given data constraints, GR4J was calibrated using streamflow from March 3, 2020 through December 31, 2020 using climatological variables from the previous two years as a warmup period. The validation period consisted of streamflows from January 1, 2021 through March 30, 2021. Parameter estimates were computed using the Shuffled Complex Evolution algorithm implemented in the hydromad R package [@andrews_open_2011].
+
+
+
+```{r}
+## setup data for gr4j models
+
+
+## need watershed area in sq km
+thompsons_16396 <- sf::st_read(here::here("Raw-Data/Spatial/thompsons.shp"),
+                               quiet = TRUE)
+thompsons_16396_area <- st_area(thompsons_16396) %>% units::set_units("km^2") %>% as.numeric()
+thompsons_16397 <- sf::st_read(here::here("Raw-Data/Spatial/thompsons_16397.shp"),
+                               quiet = TRUE)
+thompsons_16397_area <- st_area(thompsons_16397) %>% units::set_units("km^2") %>% as.numeric()
+thompsons_16882 <- sf::st_read(here::here("Raw-Data/Spatial/still_creek.shp"),
+                               quiet = TRUE)
+thompsons_16882_area <- st_area(thompsons_16882) %>% units::set_units("km^2") %>% as.numeric()
+
+## setup the hydromad compatible data for each site
+zoo(streamflow_16396$PRCP, streamflow_16396$date) |> 
+  merge.zoo(zoo(streamflow_16396$ET, streamflow_16396$date), all = TRUE) |> 
+  merge.zoo(zoo(convertFlow(streamflow_16396$adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16396_area), streamflow_16396$date)) -> hymod.df.16396
+
+names(hymod.df.16396) <- c("P", "E", "Q")
+hymod.df.16396 <- as.zooreg(hymod.df.16396)
+
+
+zoo(streamflow_16397$PRCP, streamflow_16397$date) |> 
+  merge.zoo(zoo(streamflow_16397$ET, streamflow_16397$date), all = TRUE) |> 
+  merge.zoo(zoo(convertFlow(streamflow_16397$adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16397_area), streamflow_16397$date)) -> hymod.df.16397
+
+names(hymod.df.16397) <- c("P", "E", "Q")
+hymod.df.16397 <- as.zooreg(hymod.df.16397)
+
+zoo(streamflow_16882$PRCP, streamflow_16882$date) |> 
+  merge.zoo(zoo(streamflow_16882$ET, streamflow_16882$date), all = TRUE) |> 
+  merge.zoo(zoo(convertFlow(streamflow_16882$adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16882_area), streamflow_16882$date)) -> hymod.df.16882
+
+names(hymod.df.16882) <- c("P", "E", "Q")
+hymod.df.16882 <- as.zooreg(hymod.df.16882)
+
+## create the validation dataset
+hymod.validation.16396 <- window(hymod.df.16396, start = as.Date("2021-01-01")-730, end = "2021-03-30")
+hymod.validation.16397 <- window(hymod.df.16397, start = as.Date("2021-01-01")-730, end = "2021-03-30")
+hymod.validation.16882 <- window(hymod.df.16882, start = as.Date("2021-01-01")-730, end = "2021-03-30")
+
+
+## create the calibration datasets
+hymod.cal.16396 <- window(hymod.df.16396, start = as.Date("2020-03-03")-730, end = "2020-12-31")
+hymod.cal.16397 <- window(hymod.df.16397, start = as.Date("2020-03-03")-730, end = "2020-12-31")
+hymod.cal.16882 <- window(hymod.df.16882, start = as.Date("2020-03-03")-730, end = "2020-12-31")
+
+## set the warm up period 730 days (2 years)
+hydromad.options(warmup=730)
+```
+
+
+```{r echo=FALSE}
+## fit gr4j models
+set.seed(4646)
+gr4j_mod_16396 <- hydromad(hymod.cal.16396, sma = "gr4j",
+                           x1 = c(10,5000),
+                           x2 = c(-30,50),
+                           x3 = c(0,5000),
+                           x4 = c(0.5,5),
+                           routing = "gr4jrouting")
+
+
+gr4j_fit_16396 <- fitBySCE(gr4j_mod_16396,
+                             objective = hmadstat("r.sq.sqrt"),
+                           control = list(ncomplex = 15))
+
+gr4j_mod_16397 <- hydromad(hymod.cal.16397, sma = "gr4j",
+                           x1 = c(10,3000),
+                           x2 = c(-30,50),
+                           x3 = c(0,3000),
+                           x4 = c(0.5,3),
+                           routing = "gr4jrouting")
+
+gr4j_fit_16397 <- fitBySCE(gr4j_mod_16397,
+                             objective = hmadstat("r.squared"),
+                           control = list(ncomplex = 15))
+
+gr4j_mod_16882 <- hydromad(hymod.cal.16882, sma = "gr4j",
+                           x1 = c(10,5000),
+                           x2 = c(-25,50),
+                           x3 = c(0,5000),
+                           x4 = c(0.5,3),
+                           routing = "gr4jrouting")
+
+gr4j_fit_16882 <- fitBySCE(gr4j_mod_16882,
+                            objective = hmadstat("r.sq.boxcox"),
+                           control = list(ncomplex = 15))
+# summary(gr4j_fit_16396)
+# xyplot(gr4j_fit_16396,with.P = TRUE)
+# xyplot(update(gr4j_fit_16396, newdata = hymod.validation.16396), with.P = TRUE)
+# summary(update(gr4j_fit_16396, newdata = hymod.validation.16396))
+# # 
+# # 
+# summary(gr4j_fit_16397)
+# xyplot(gr4j_fit_16397, with.P = TRUE)
+# xyplot(update(gr4j_fit_16397, newdata = hymod.validation.16397), with.P = TRUE)
+# summary(update(gr4j_fit_16397, newdata = hymod.validation.16397))
+# # 
+# summary(gr4j_fit_16882)
+# xyplot(gr4j_fit_16882, with.P = TRUE)
+# xyplot(update(gr4j_fit_16882, newdata = hymod.validation.16882), with.P = TRUE)
+# summary(update(gr4j_fit_16882, newdata = hymod.validation.16882))
+```
+
+
+
+### Generalized Additive Model
+
+Generalized Additive Models (GAMs) are a semi-parametric regression based approach for modeling non-linear relationships between one or more independent variables and a dependent variable (streamflow in this case). GAMs model the response variable as a the sum of some unknown smoothing functions applied to each predictor variable:
+$$
+Q_i = \beta_0 + f(X_1) + f(X_2) + f(X_n) + \varepsilon
+$$
+Where *Q* is the predicted discharge on day *i*, *β~0~* is the intercept, ƒ is a smoothing function applied to each of the linear predictors (*X~1~ ... X~n~*), and ε is the residual error term assumed normally distributed around mean zero. The smoothing function ƒ is fit to the data using generalized cross validation or restricted maximum likelihood. GAMs also incorporate a probability distribution the describes the distribution of the expected response with a link function the related the linear predictor with the mean to the probability distribution function. In short, this provides a way to model the expected non-normal (positive and skewed) response distribution expected from daily streamflow data.
+
+The GAM for SWQM-16396 and 16397 was formulated as:
+$$
+Q = f(P) + f(ET) + f(P_{lag}) + f(P_{sum,3})
+$$
+where *P* is log transformed total daily precipitation and *ET* is daily Evapotranspiration and are assumed to be the main forcing variables influencing streamflow. *P~lag~* is the log transformed one-day lagged precipitation. *P~sum,3~* is the log transformed rolling three-day sum rainfall and included as an indicator of wetness in the watershed. Note, that predictor variables were transformed prior to model fitting to reduce skewness and improve model residuals. The smoothing function, ƒ, is a cubic regression or thin plate spline function fit to the observed data using restricted maximum likelihood which estimates the optimal smoothing parameters. The GAM error structure was fit using a Gamma distribution and log link function. GAMS were developed as specified in @schramm_comparision_2021 using the mgcv package in R [@wood_fast_2008; @Rcore]. 
+
+SWQM-16882 presented an additional challenge due to a high frequency of zero flow days once the streamflow was naturalized. To accommodate zero flow values a two-step hurdle model was setup [@liu_statistical_2019]. In the first model, a logistic regression GAM was developed to predict the probability of any streamflow on a given day. On days with less than 50% likelihood of flow, the streamflow is assumed zero. On days with greater than 50% likelihood of flow, another GAM is used to predict the amount of flow on that day. For the logistic regression, the model covariates remain the same, except the GAM uses a binomial distribution and logit link. The number of covariates in the second GAM had to be reduced due to fewer available model degrees of freedom. Variables included in the final model were based on information criterion parameters [@zuur_mixed_2009].
+
+
+```{r}
+## make gam datasets
+gam.df.16397 <- streamflow_16397 |> 
+  ## convert to runoff
+  mutate(runoff = convertFlow(adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16397_area)) |> 
+  ## add some predictor variables
+  mutate(lrunoff = log1p(runoff),
+         lagP1 = lag(PRCP, n = 1),
+         lagP2 = lag(PRCP, n = 2) + lagP1,
+         lagP3 = lag(PRCP, n = 3) + lagP2)
+gam.cal.16397 <- gam.df.16397 |> 
+  filter(date <= as.Date("2020-12-31"))
+gam.validation.16397 <- gam.df.16397 |> 
+  filter(date > as.Date("2020-12-31") & date <= as.Date("2021-03-30"))
+
+gam.df.16396 <- streamflow_16396 |> 
+  ## convert to runoff
+  mutate(runoff = convertFlow(adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16396_area)) |> 
+  ## add some predictor variables
+  mutate(lrunoff = log1p(runoff),
+         lagP1 = lag(PRCP, n = 1),
+         lagP2 = lag(PRCP, n = 2) + lagP1,
+         lagP3 = lag(PRCP, n = 3) + lagP2)
+gam.cal.16396 <- gam.df.16396 |> 
+  filter(date <= as.Date("2020-12-31"))
+gam.validation.16396 <- gam.df.16396 |> 
+  filter(date > as.Date("2020-12-31") & date <= as.Date("2021-03-30"))
+
+gam.df.16882 <- streamflow_16882 |> 
+  ## convert to runoff
+  mutate(runoff = convertFlow(adjusted_flow, from = "ft^3 / s", to = "mm", area.km2 = thompsons_16882_area)) |> 
+  ## add some predictor variables
+  mutate(lrunoff = log1p(runoff),
+         lagP1 = lag(PRCP, n = 1),
+         lagP2 = lag(PRCP, n = 2) + lagP1,
+         lagP3 = lag(PRCP, n = 3) + lagP2) |> 
+    mutate(non_zero = case_when(
+    runoff == 0 ~ 0,
+    runoff > 0 ~ 1
+  ))
+gam.cal.16882 <- gam.df.16882 |> 
+  filter(date <= as.Date("2020-12-31"))
+gam.validation.16882 <- gam.df.16882 |> 
+  filter(date > as.Date("2020-12-31") & date <= as.Date("2021-03-30"))
+```
+
+
+```{r}
+#| gams, include = FALSE, echo = FALSE
+
+## fit gam models
+gam_fit_16396 <- gamm(runoff ~
+                        s(log1p(PRCP), bs = "cs") +
+                        s(ET, bs = "cs") +
+                        s(GWETROOT, bs = "cs") +
+                        s(log1p(lagP1), bs = "cs") +
+                        s(log1p(lagP3), bs = "cs"),
+                 #correlation = corCAR1(0.5),
+                 data = gam.cal.16396,
+                 family = Gamma(link = "log"))
+
+#pacf(resid(gam_fit_16396$lme, type = "normalized"))
+
+gam_fit_16397 <- gamm(runoff ~
+                        s(log1p(PRCP), bs = "cs") +
+                        s(ET, bs = "cs") +
+                        s(GWETROOT, bs = "cs") +
+                        s(log1p(lagP1), bs = "cs") +
+                        s(log1p(lagP3), bs = "cs"),
+                 #correlation = corAR1(0.25),
+                 data = gam.cal.16397,
+                 family = Gamma(link = "log"))
+#pacf(resid(gam_fit_16397$lme, type = "normalized"))
+
+lr_fit_16882 <- gam(non_zero ~
+                        s(log1p(PRCP), bs = "cs") +
+                        s(ET, bs = "cs") +
+                        s(GWETROOT, bs = "cs") +
+                        s(log1p(lagP1), bs = "cs") +
+                        s(log1p(lagP3), bs = "cs"),
+                     data = gam.cal.16882,
+                     family = binomial())
+
+gam_fit_16882 <- gamm(runoff ~
+                       s(log1p(PRCP), bs = "cs") +
+                       s(ET, bs = "cs") +
+                        s(GWETROOT, bs = "cs"),
+                      #correlation = corAR1(0.25),
+              data = subset(gam.cal.16882, non_zero == 1),
+              family = Gamma(link = "log"))
+
+```
+
+
+
+### Validation
+
+
+```{r}
+gam_validation_16396 <- predict.gam(gam_fit_16396$gam, newdata = gam.validation.16396,
+                              type = "response")
+gam.validation.16396 |> 
+  mutate(gam_validate = (gam_validation_16396)) -> gam.validation.16396
+
+
+gam_validation_16397 <- predict.gam(gam_fit_16397$gam, newdata = gam.validation.16397,
+                              type = "response")
+gam.validation.16397 |> 
+  mutate(gam_validate = (gam_validation_16397)) -> gam.validation.16397
+
+gam.validation.16882 |> 
+  bind_cols(as_tibble(predict.gam(lr_fit_16882, newdata = gam.validation.16882,
+                                    type = "response"))) |> 
+  mutate(pred_zero = case_when(
+    value < 0.5 ~ 0,
+    value >= 0.5 ~ 1)) |> 
+  bind_cols(
+    as_tibble(predict(gam_fit_16882$gam, gam.validation.16882, se.fit = FALSE,
+                      type = "response")) %>%
+      dplyr::rename(fits = value)) |> 
+  mutate(fits = case_when(
+    pred_zero == 0 ~ 0,
+    pred_zero != 0 ~ fits)) %>%
+  mutate(fits = case_when(
+    fits < 0 ~ 0,
+    fits >= 0 ~ fits)) -> gam.validation.16882
+
+
+```
+
+```{r}
+#| validation16396plot,
+#| echo = FALSE, fig.width = 6.5, fig.height = 4,
+#| fig.cap = "SWQM-16396 GAM and GR4J predicted flows plotted against validation flows."
+#|   
+gr4j_validate_16396 <- update(gr4j_fit_16396, newdata = hymod.validation.16396)
+gr4j_validate_16396 <- gr4j_validate_16396$fitted.values |> 
+  convertFlow(from = "mm", to = "ft^3 / s", area.km2 = thompsons_16396_area) 
+gr4j_validate_16396 <- gr4j_validate_16396 |>
+  fortify.zoo() |>
+  filter(Index >= as.Date("2021-01-01") & Index <= as.Date("2021-03-31"))
+
+# gam_validation_16396 <- predict.gam(gam_fit_16396$gam, newdata = gam.validation.16396,
+#                               type = "response")
+gam.validation.16396 <- gam.validation.16396 |>
+  # mutate(gam_validate = (gam_validation_16396)) |>
+  mutate(gam_validate = convertFlow(gam_validate, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16396_area)) |>
+  left_join(gr4j_validate_16396, by = c("date" = "Index"))
+
+gam.validation.16396 |> 
+  select(c("date", "Measured Flow" = "adjusted_flow", "GAM" = "gam_validate", "GR4J" = "gr4j_validate_16396")) |> 
+  pivot_longer(c("GAM", "GR4J"), names_to = "method", values_to = "flow") |> 
+  ggplot() +
+  geom_line(aes(date, `Measured Flow`, color = "Measured Flow", linetype = "Measured Flow"), alpha = 0.5) +
+  geom_line(aes(date, flow, color = method, linetype = method)) +
+  scale_linetype_manual(name = NULL, values = c("GAM" = 5,
+                                                "GR4J" = 4, 
+                                                "Measured Flow" = 1)) +
+  facet_grid(~method) +
+  scale_color_discrete(name = NULL) +
+  labs(x = "Date",
+       y = "Flow [cfs]",
+       caption = "SWQM-16396") +
+  twriTemplates::theme_TWRI_print()
+```
+
+```{r}
+#| validation16397plot,
+#| echo = FALSE, fig.width = 6.5, fig.height = 4,
+#| fig.cap = "SWQM-16397 GAM and GR4J predicted flows plotted against validation flows."
+#|   
+gr4j_validate_16397 <- update(gr4j_fit_16397, newdata = hymod.validation.16397)
+gr4j_validate_16397 <- gr4j_validate_16397$fitted.values |> 
+  convertFlow(from = "mm", to = "ft^3 / s", area.km2 = thompsons_16397_area) 
+gr4j_validate_16397 <- gr4j_validate_16397 |>
+  fortify.zoo() |>
+  filter(Index >= as.Date("2021-01-01"))
+
+# gam_validation_16397 <- predict.gam(gam_fit_16397$gam, newdata = gam.validation.16397,
+#                               type = "response")
+gam.validation.16397 <- gam.validation.16397 |>
+  #mutate(gam_validate = (gam_validation_16397)) |>
+  mutate(gam_validate = convertFlow(gam_validate, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16397_area)) |>
+  left_join(gr4j_validate_16397, by = c("date" = "Index"))
+
+gam.validation.16397 |> 
+  select(c("date", "Measured Flow" = "adjusted_flow", "GAM" = "gam_validate", "GR4J" = "gr4j_validate_16397")) |> 
+  pivot_longer(c("GAM", "GR4J"), names_to = "method", values_to = "flow") |> 
+  ggplot() +
+  geom_line(aes(date, `Measured Flow`, color = "Measured Flow", linetype = "Measured Flow"), alpha = 0.5) +
+  geom_line(aes(date, flow, color = method, linetype = method)) +
+  scale_linetype_manual(name = NULL, values = c("GAM" = 5,
+                                                "GR4J" = 4, 
+                                                "Measured Flow" = 1)) +
+  facet_grid(~method) +
+  scale_color_discrete(name = NULL) +
+  labs(x = "Date",
+       y = "Flow [cfs]",
+       caption = "SWQM-16397") +
+  twriTemplates::theme_TWRI_print()
+```
+
+```{r}
+#| validation16882plot,
+#| echo = FALSE, fig.width = 6.5, fig.height = 4,
+#| fig.cap = "SWQM-16882 GAM and GR4J predicted flows plotted against validation flows."
+#|  
+gr4j_validate_16882 <- update(gr4j_fit_16882, newdata = hymod.validation.16882)
+gr4j_validate_16882 <- gr4j_validate_16882$fitted.values |> 
+  convertFlow(from = "mm", to = "ft^3 / s", area.km2 = thompsons_16882_area) 
+gr4j_validate_16882 <- gr4j_validate_16882 |>
+  fortify.zoo() |>
+  filter(Index >= as.Date("2021-01-01"))
+
+gam.validation.16882 <- gam.validation.16882 |> 
+  mutate(gam_validate = fits) |>
+  mutate(gam_validate = convertFlow(gam_validate, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16882_area)) |>
+  left_join(gr4j_validate_16882, by = c("date" = "Index"))
+
+gam.validation.16882 |> 
+  select(c("date", "Measured Flow" = "adjusted_flow", "GAM" = "gam_validate", "GR4J" = "gr4j_validate_16882")) |> 
+  pivot_longer(c("GAM", "GR4J"), names_to = "method", values_to = "flow") |> 
+  ggplot() +
+  geom_line(aes(date, `Measured Flow`, color = "Measured Flow", linetype = "Measured Flow"), alpha = 0.5) +
+  geom_line(aes(date, flow, color = method, linetype = method)) +
+  scale_linetype_manual(name = NULL, values = c("GAM" = 5,
+                                                "GR4J" = 4, 
+                                                "Measured Flow" = 1)) +
+  facet_grid(~method) +
+  scale_color_discrete(name = NULL) +
+  labs(x = "Date",
+       y = "Flow [cfs]",
+       caption = "SWQM-16882") +
+  twriTemplates::theme_TWRI_print()
+```
+
+```{r}
+#| validationmetrics,
+#| echo = FALSE, fig.width = 6.5, fig.height = 6,
+#| fig.cap = "Validation data NSE and KGE scores for GAM and GR4J predictions at each site."
+#|  
+metrics <- tibble(Station = "SWQM-16396",
+                  Method = "GAM",
+                  NSE = hydroGOF::mNSE(as.numeric(gam.validation.16396$gam_validate),
+                            gam.validation.16396$adjusted_flow),
+                  KGE = hydroGOF::KGE(as.numeric(gam.validation.16396$gam_validate),
+                                      gam.validation.16396$adjusted_flow)) |> 
+  rbind(
+    tibble(Station = "SWQM-16397",
+           Method = "GAM",
+           NSE = hydroGOF::mNSE(as.numeric(gam.validation.16397$gam_validate),
+                               gam.validation.16397$adjusted_flow),
+           KGE = hydroGOF::KGE(as.numeric(gam.validation.16397$gam_validate),
+                               gam.validation.16397$adjusted_flow))) |> 
+  rbind(
+    tibble(Station = "SWQM-16882",
+           Method = "GAM",
+           NSE = hydroGOF::mNSE(as.numeric(gam.validation.16882$gam_validate),
+                               gam.validation.16882$adjusted_flow),
+           KGE = hydroGOF::KGE(as.numeric(gam.validation.16882$gam_validate),
+                               gam.validation.16882$adjusted_flow))) |> 
+  rbind(
+    tibble(Station = "SWQM-16396",
+           Method = "GR4J",
+           NSE = hydroGOF::mNSE(as.numeric(gam.validation.16396$gr4j_validate_16396),
+                               gam.validation.16396$adjusted_flow),
+           KGE = hydroGOF::KGE(as.numeric(gam.validation.16396$gr4j_validate_16396),
+                               gam.validation.16396$adjusted_flow))) |> 
+  rbind(
+    tibble(Station = "SWQM-16397",
+           Method = "GR4J",
+           NSE = hydroGOF::mNSE(as.numeric(gam.validation.16397$gr4j_validate_16397),
+                               gam.validation.16397$adjusted_flow),
+           KGE = hydroGOF::KGE(as.numeric(gam.validation.16397$gr4j_validate_16397),
+                               gam.validation.16397$adjusted_flow))) |> 
+  rbind(
+    tibble(Station = "SWQM-16882",
+           Method = "GR4J",
+           NSE = hydroGOF::mNSE(as.numeric(gam.validation.16882$gr4j_validate_16882),
+                               gam.validation.16882$adjusted_flow),
+           KGE = hydroGOF::KGE(as.numeric(gam.validation.16882$gr4j_validate_16882),
+                               gam.validation.16882$adjusted_flow)))
+
+
+## maybe figure is easier
+
+
+metrics |> 
+  pivot_longer(cols = c("NSE", "KGE"), names_to = "Metric") |> 
+  ggplot() +
+  geom_point(aes(Station, value, color = Method),
+             position=position_dodge(0.2)) +
+  geom_linerange(aes(x = Station,
+                   ymin = 0, ymax = value, 
+                   color = Method),
+               position=position_dodge(0.2)) +
+  # would like to use ggrepel to label values but doesn't work
+  # with ggbreak
+  # ggrepel::geom_text_repel(aes(label = round(value, 2),
+  #                              x = Station,
+  #                              y = value)) +
+  facet_wrap(~Metric) +
+  # ggbreak::scale_y_break(c(-4.75, -9)) +
+  # ggbreak::scale_y_break(c(-4.25, 0)) +
+  theme_TWRI_print()
+
+
+```
+
+The daily model predictions (Figure \@ref(fig:validation16396plot), \@ref(fig:validation16397plot), \@ref(fig:validation16882plot) ) from GR4J and GAM were evaluated against the validation streamflows (January 1, 2021 - March 31, 2021) using Nash Sutcliffe Efficiency (NSE) and Kling-Gupta Efficiency (KGE). 
+At SWQM-16396, both KGE and NSE scores indicate that GR4J is the preferred approach (Figure \@ref(fig:validationmetrics), Table \@ref(tab:validationtab)). Similarly, GR4J outperformed GAM at SWQM-16397 and SWQM-16882 across both metrics. It is important to note that the validation data set was extremely small, so a high variance in performance is expected and probably reflected by some of the extreme values shown in the GAM metrics.
+
+```{r tab.cap="NSE and KGE metrics for streamflow validation (January 1, 2021 - March 31, 2021) at each station.", tab.id = "validationtab", label="validationtab"}
+
+metrics |> 
+  pivot_longer(cols = c("NSE", "KGE"), names_to = "Metric") |> 
+  pivot_wider(names_from = c("Method", "Metric"), values_from = "value") |> 
+  flextable::flextable(col_keys = c("Station", "GAM_NSE", "GR4J_NSE", "GAM_KGE", "GR4J_KGE")) |> 
+  flextable::delete_part(part = "header") |> 
+    flextable::add_header("Station" = "Station", 
+                        "GAM_NSE" = "GAM", 
+                        "GR4J_NSE" = "GR4J", 
+                        "GAM_KGE" = "GAM", 
+                        "GR4J_KGE" = "GR4J",
+                        top = FALSE) |> 
+  flextable::add_header("GAM_NSE" = "NSE", "GAM_KGE" = "KGE", 
+                        "GR4J_NSE" = "NSE", "GR4J_KGE" = "KGE",
+                        top = TRUE) |>
+  flextable::merge_h(part = "header") |>
+  flextable::colformat_double(digits = 2) |> 
+  flextable::theme_booktabs()
+
+```
+
+## Daily Streamflow Simulation
+
+Based on validation metrics, GR4J was considered most suitable for simulating long-term streamflows at SWQM-16396, SWQM-16397 and SWQM-16882. A longer period of available streamflow data to construct calibration and validation datasets would likely result in improved goodness of fit metrics for both methods and all stations. Additionally, wastewater discharge data was only available as mean monthly discharges instead of daily discharge. Wastewater discharges are a substantial portion of the measured streamflow and the lack of daily data certainly contributes some unknown uncertaintity to the streamflow estimates.
+
+Naturalized daily streamflows were estimated for January 1, 2003 through March 2, 2020 using GR4J and parameters identified by the calibration period (Figure \@ref(fig:simulationoutput)). Precipitation and ET from January 1, 2001 through December 31, 2002 were used as a warm-up period for GR4J models. Naturalized measured streamflow values were used instead of GR4J simulated streamflows for the period of March 3, 2020 through March 30, 2021. TMDLs must also account for full permitted WWTF discharges. As a final step, full permitted discharges were added back to the flow record. For SWQM-16396, 5.723 MGD are added to the daily flow record accounting for WQ0011778001, WQ0010426002, and WQ0003821000. No WWTF discharges occur in the SWQM-16397 watershed and no additional flows were added. For SWQM-16882, 4 MGD are added to the daily flow record accounting for WQ0010426002.
+
+
+
+
+```{r}
+
+zoo(thompsons_climate$PRCP, thompsons_climate$YYYYMMDD) |> 
+  merge.zoo(zoo(thompsons_climate$ET, thompsons_climate$YYYYMMDD), all = TRUE) -> hymod.full
+names(hymod.full) <- c("P", "E")
+hymod.full <- as.zooreg(hymod.full)
+
+
+full_16396_gr4j <- update(gr4j_fit_16396, 
+                          newdata = hymod.full) |> 
+  fitted() |> 
+  fortify.zoo()
+names(full_16396_gr4j) <- c("Date", "GR4J_fit")
+
+full_16397_gr4j <- update(gr4j_fit_16397, 
+                          newdata = hymod.full) |> 
+  fitted() |> 
+  fortify.zoo()
+names(full_16397_gr4j) <- c("Date", "GR4J_fit")
+
+full_16882_gr4j <- update(gr4j_fit_16882, 
+                          newdata = hymod.full) |> 
+  fitted() |> 
+  fortify.zoo()
+names(full_16882_gr4j) <- c("Date", "GR4J_fit")
+
+tibble(Date = thompsons_climate$YYYYMMDD,
+       Precip = thompsons_climate$PRCP,
+       ET = thompsons_climate$ET) |> 
+  left_join(full_16396_gr4j, by = c("Date" = "Date")) |>
+  mutate(GR4J_Discharge = convertFlow(GR4J_fit, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16396_area)) |>
+  left_join(streamflow_16396 |> select(date, adjusted_flow), by = c("Date" = "date")) |>
+  mutate(naturalized_flow = case_when(
+    is.na(adjusted_flow) ~ GR4J_Discharge,
+    !is.na(adjusted_flow) ~ adjusted_flow
+  )) |> 
+  mutate(naturalized_flow = units::set_units(naturalized_flow, "ft^3/s")) |> 
+  mutate(permitted_discharges = 5.723) |> 
+  mutate(permitted_discharge = units::set_units(permitted_discharges,"1E6gallons/day")) |> 
+  mutate(permitted_discharge_cfs = units::set_units(permitted_discharge, "ft^3/s")) |> 
+  mutate(TMDL_Flow = naturalized_flow + permitted_discharge_cfs) -> output_16396
+
+```
+
+
+```{r}
+
+tibble(Date = thompsons_climate$YYYYMMDD,
+       Precip = thompsons_climate$PRCP,
+       ET = thompsons_climate$ET) |> 
+  left_join(full_16397_gr4j, by = c("Date" = "Date")) |>
+  mutate(GR4J_Discharge = convertFlow(GR4J_fit, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16397_area)) |>
+  left_join(streamflow_16397 |> select(date, adjusted_flow), by = c("Date" = "date")) |>
+  mutate(naturalized_flow = case_when(
+    is.na(adjusted_flow) ~ GR4J_Discharge,
+    !is.na(adjusted_flow) ~ adjusted_flow
+  )) |> 
+  mutate(naturalized_flow = units::set_units(naturalized_flow, "ft^3/s")) |> 
+  mutate(permitted_discharges = 0) |> 
+  mutate(permitted_discharge = units::set_units(permitted_discharges,"1E6gallons/day")) |> 
+  mutate(permitted_discharge_cfs = units::set_units(permitted_discharge, "ft^3/s")) |> 
+  mutate(TMDL_Flow = naturalized_flow + permitted_discharge_cfs) -> output_16397
+
+```
+
+```{r}
+tibble(Date = thompsons_climate$YYYYMMDD,
+       Precip = thompsons_climate$PRCP,
+       ET = thompsons_climate$ET) |> 
+  left_join(full_16882_gr4j, by = c("Date" = "Date")) |>
+  mutate(GR4J_Discharge = convertFlow(GR4J_fit, from = "mm", to = "ft^3 / s", area.km2 = thompsons_16882_area)) |>
+  left_join(streamflow_16882|> select(date, adjusted_flow), by = c("Date" = "date")) |>
+  mutate(naturalized_flow = case_when(
+    is.na(adjusted_flow) ~ GR4J_Discharge,
+    !is.na(adjusted_flow) ~ adjusted_flow
+  )) |> 
+  mutate(naturalized_flow = units::set_units(naturalized_flow, "ft^3/s")) |> 
+  mutate(permitted_discharges = 4) |> 
+  mutate(permitted_discharge = units::set_units(permitted_discharges,"1E6gallons/day")) |> 
+  mutate(permitted_discharge_cfs = units::set_units(permitted_discharge, "ft^3/s")) |> 
+  mutate(TMDL_Flow = naturalized_flow + permitted_discharge_cfs) -> output_16882
+```
+
+```{r}
+write_csv(output_16396, here::here("Output-Data/Simulated_Streamflow_16396.csv"))
+write_csv(output_16397, here::here("Output-Data/Simulated_Streamflow_16397.csv"))
+write_csv(output_16882, here::here("Output-Data/Simulated_Streamflow_16882.csv"))
+```
+
+```{r}
+#| simulationoutput, 
+#| echo = FALSE, fig.width = 6.5, fig.height = 6,
+#| fig.cap = "Final TMDL streamflow estimates for each SWQM station based on daily monitoring and GR4J simulation."
+#|  
+output_16882 |> 
+  mutate(SWQM = "SWQM-16882",
+         GR4J_fit) |> 
+  bind_rows(output_16397 |> mutate(SWQM = "SWQM-16397")) |> 
+  bind_rows(output_16396 |>  mutate(SWQM = "SWQM-16396")) |> 
+  ggplot() +
+  geom_line(aes(Date, as.numeric(TMDL_Flow))) +
+  facet_wrap(~SWQM, ncol = 1, scales = "free_y") +
+  labs(x = "Date", y = "Mean Daily Streamflow (cfs)") +
+  theme_TWRI_print()
+```
+
+## References
